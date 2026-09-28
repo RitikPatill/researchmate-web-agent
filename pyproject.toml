@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "researchmate"
+version = "0.1.0"
+description = "Terminal-first autonomous research agent powered by Claude"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic==0.57.0",
+    "httpx==0.28.1",
+    "beautifulsoup4==4.13.4",
+    "pydantic==2.11.4",
+    "rich==14.0.0",
+    "typer==0.15.3",
+    "python-dotenv==1.1.0",
+    "lxml==5.3.2",
+]
+
+[project.scripts]
+researchmate = "researchmate.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/researchmate"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
