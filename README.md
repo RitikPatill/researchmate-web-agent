@@ -1,5 +1,9 @@
 # ResearchMate — Autonomous Web Research Agent
 
+
+> **Video walkthrough:** https://youtu.be/47lHOdThXqc
+> **60-second overview:** https://youtu.be/dOg98Abqw4M
+
 > A CLI agent that uses Claude tool-use to browse the web, synthesise sources, and emit structured Markdown research reports.
 
 <!-- TODO: replace with a 5-10 second demo gif. Record with ScreenToGif on
