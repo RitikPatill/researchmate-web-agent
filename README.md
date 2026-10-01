@@ -1,133 +1,113 @@
-# ResearchMate
+# ResearchMate — Autonomous Web Research Agent
 
-A terminal-first autonomous research agent powered by Claude. Give it a question and it does the legwork: searches the web, reads pages, synthesises findings, and saves a structured Markdown report — no paid search API required.
+> A CLI agent that uses Claude tool-use to browse the web, synthesise sources, and emit structured Markdown research reports.
 
-## Status
+<!-- TODO: replace with a 5-10 second demo gif. Record with ScreenToGif on
+     Windows or peek on macOS. Save to docs/demo.gif and update path here. -->
+![demo](docs/demo.gif)
 
-| Milestone | Scope | State |
-|---|---|---|
-| **M1** | Repo scaffold: `src/` layout, pinned deps, CLI entry point stub, `.env.example`, MIT license | **done** |
-| M2 | Agent loop: Claude tool-use, `web_search`, `fetch_page`, `extract_sections` | planned |
-| M3 | Report writer: Pydantic schema, Markdown + YAML front-matter output | planned |
-| M4 | pytest suite covering tools (mocked HTTP) and report serialisation; CI | planned |
-| **M5** | `rich` Live display, CLI flags (`--max-steps`, `--model`, `--output-dir`, `--dry-run`), `.env` defaults | **done** |
+## What it is
 
-**What works now (M1 + M5):**
+ResearchMate is a terminal-first autonomous research agent. You hand it a question and it does the legwork: it breaks the question into sub-queries, iteratively calls its own tool set (web search, page fetcher, text extractor) until it has enough evidence, then emits a structured Markdown report with an executive summary, per-source findings, confidence notes, and a sources table.
 
-- `researchmate <question> --dry-run` resolves the full configuration (model, step limit, output directory) and prints it as a Rich table — no API call made.
-- `researchmate <question>` launches a `rich` Live display: an animated spinner showing the current step and tool name, a scrolling tool-call log table (step, tool, input snippet, result snippet, elapsed time), and a Markdown report preview panel on completion.
-- All run parameters are configurable via CLI flags (`--max-steps`, `--model`, `--output-dir`) or `.env` variables (`MAX_STEPS`, `MODEL`); CLI flags take precedence.
-- `agent.py` defines the `AgentCallback` structural protocol that `ResearchUI` satisfies, and stubs `agent.run()` — running without `--dry-run` exits with a yellow advisory until M2–M4 are implemented.
+The agent loop runs on `claude-sonnet-4-6` in tool-use mode. Claude decides when it has gathered sufficient evidence; a configurable `MAX_STEPS` guard caps the maximum number of tool calls so runaway queries never happen. No paid search API is required — web search is handled by scraping DuckDuckGo HTML directly.
 
-## Motivation
+## Quickstart
 
-Most "research agents" are either giant frameworks (LangChain, AutoGPT) or require a paid search API (Bing, Serper). ResearchMate is intentionally tiny: ~400 lines of Python, zero paid dependencies beyond an Anthropic key, and fully auditable. It demonstrates agentic tool-use, prompt engineering, and structured output in a self-contained project.
+```bash
+git clone https://github.com/RitikPatill/researchmate-web-agent.git
+cd researchmate-web-agent
+
+# Python 3.11+ required
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+
+pip install -e .
+
+cp .env.example .env
+# Open .env and set ANTHROPIC_API_KEY=sk-ant-...
+
+researchmate "What are the best open-source vector databases in 2026?"
+# Report saved to ./reports/what-are-the-best-open-source-vector-databases-i.md
+```
+
+## Usage
+
+Run a research query with default settings (10 steps, `claude-sonnet-4-6`, output to `./reports/`):
+
+```bash
+researchmate "What are the best open-source vector databases in 2026?"
+```
+
+Resolve configuration and exit without making an API call:
+
+```bash
+researchmate "Explain RAG vs fine-tuning trade-offs" --dry-run
+```
+
+Override model, step limit, and output directory:
+
+```bash
+researchmate "Explain RAG vs fine-tuning trade-offs" \
+    --max-steps 15 \
+    --model claude-haiku-4-5-20251001 \
+    --output-dir ./out
+```
+
+While running, `rich` renders an animated spinner showing the current step and tool name, a scrolling tool-call log table, and a Markdown report preview panel on completion. All flags can also be set via `.env` variables (`MAX_STEPS`, `MODEL`); CLI flags take precedence.
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│             CLI  (typer)  cli.py                         │
-│   researchmate "question" [--max-steps N] [--model ID]   │
-│                           [--output-dir DIR] [--dry-run] │
-└──────────┬───────────────────────────┬───────────────────┘
-           │                           │
-           │ (live display)            │ (agent.run callback)
-           ▼                           ▼
-┌─────────────────────┐   ┌────────────────────────────────┐
-│   ResearchUI        │   │         Agent Loop             │
-│   ui.py             │◄──│   claude-sonnet-4-6            │
-│                     │   │   (tool-use mode)              │
-│  spinner            │   │                                │
-│  tool-call log      │   │  ┌──────────┐  ┌───────────┐  │
-│  report preview     │   │  │web_search│  │fetch_page │  │
-└─────────────────────┘   │  │DuckDuckGo│  │httpx+bs4  │  │
-                           │  └──────────┘  └───────────┘  │
-                           │  ┌─────────────────────────┐  │
-                           │  │    extract_sections     │  │
-                           │  │      text chunker       │  │
-                           │  └─────────────────────────┘  │
-                           │  Iterates until MAX_STEPS      │
-                           └───────────────┬────────────────┘
-                                           │
-                                           ▼
-                           ┌────────────────────────────────┐
-                           │        Report Writer           │
-                           │  Pydantic schema → Markdown    │
-                           │  + YAML front-matter           │
-                           │  saved to <output-dir>/<slug>  │
-                           └────────────────────────────────┘
+CLI (typer)
+  │
+  ├── ResearchUI (rich Live display)
+  │     spinner · tool-call log · report preview
+  │
+  └── Agent Loop (claude-sonnet-4-6, tool-use)
+        │
+        ├── web_search      DuckDuckGo HTML scraper
+        ├── fetch_page      httpx + BeautifulSoup
+        └── extract_sections  text chunker
+              │
+              └── Report Writer
+                    Pydantic schema → Markdown + YAML front-matter
+                    saved to <output-dir>/<slug>.md
 ```
 
-## Quick Start
-
-```bash
-# 1. Clone
-git clone https://github.com/yourusername/researchmate-web-agent.git
-cd researchmate-web-agent
-
-# 2. Create a virtual environment (Python 3.11+)
-python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-
-# 3. Install
-pip install -e .
-
-# 4. Configure
-cp .env.example .env
-# Edit .env and add your Anthropic API key
-
-# 5. Run
-researchmate "What are the best open-source vector databases in 2026?"
-
-# Dry-run (no API call — prints resolved config and exits)
-researchmate "What are the best open-source vector databases in 2026?" --dry-run
-
-# Custom flags
-researchmate "question" --max-steps 15 --model claude-haiku-4-5-20251001 --output-dir ./out
-```
-
-The `rich` live display (spinner, tool-call log table) launches immediately. Reports are saved to `./reports/<slug>.md` once M2–M3 are complete.
-
-## Project Layout
+## Project structure
 
 ```
 researchmate-web-agent/
-├── src/
-│   └── researchmate/
-│       ├── __init__.py       # package version
-│       ├── cli.py            # typer CLI (--max-steps, --model, --output-dir, --dry-run)
-│       ├── ui.py             # ResearchUI: rich Live display, spinner, tool-call log, report preview
-│       ├── agent.py          # AgentCallback protocol stub; run() raises NotImplementedError (M2)
-│       ├── tools.py          # web_search / fetch_page / extract_sections  (M2)
-│       └── report.py         # Pydantic report schema + Markdown writer  (M3)
-├── reports/                  # generated reports (git-ignored)
-├── tests/                    # pytest suite
-├── .env.example
-├── .gitignore
-├── LICENSE
-├── pyproject.toml
-├── requirements-dev.txt
-└── README.md
+├── src/researchmate/     # package source
+│   ├── cli.py            # typer entry point; flags and .env resolution
+│   ├── ui.py             # rich Live display (spinner, log table, preview)
+│   ├── agent.py          # tool-use loop; AgentCallback protocol
+│   ├── tools.py          # web_search / fetch_page / extract_sections + Pydantic schemas
+│   └── report.py         # ResearchReport schema, to_markdown(), save_report()
+├── tests/                # pytest suite (no network, no API key required)
+├── docs/                 # demo.gif lives here (generated locally)
+├── reports/              # generated reports, git-ignored
+├── demo.tape             # VHS script to regenerate docs/demo.gif
+├── .env.example          # ANTHROPIC_API_KEY, MAX_STEPS, MODEL
+└── pyproject.toml        # hatchling build, pinned dependencies
 ```
-
-## Configuration
-
-| Variable | Default | Description |
-|---|---|---|
-| `ANTHROPIC_API_KEY` | *(required)* | Your Anthropic API key |
-| `MAX_STEPS` | `10` | Max tool-call iterations per run |
-| `MODEL` | `claude-sonnet-4-6` | Claude model ID |
 
 ## Roadmap
 
-- **M2** — implement `agent.py` (Claude tool-use loop, `MAX_STEPS` guard) and `tools.py` (`web_search` via DuckDuckGo HTML scrape, `fetch_page` via httpx + BeautifulSoup, `extract_sections` text chunker)
-- **M3** — implement `report.py` (Pydantic `ResearchReport` schema, Markdown writer with YAML front-matter, save to `reports/<slug>.md`)
-- **M4** — pytest suite covering tools (mocked HTTP) and report serialisation; CI with GitHub Actions
-- **M6** — packaging polish: published to PyPI
-
-<!-- TODO: add items here as the project grows -->
+- [ ] Streaming output: surface Claude's partial text tokens in the live display as they arrive.
+- [ ] Caching layer: persist fetched pages to disk to avoid redundant HTTP requests across runs.
+- [ ] Plugin API: allow third-party tools to register alongside the built-in three without forking `agent.py`.
+- [ ] HTML report export: render the Markdown report to a self-contained HTML file via `mistune`.
+- [ ] Token-cost accounting: surface prompt/completion token counts and estimated USD cost in the report front-matter.
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+---
+
+Built autonomously by [autodev](https://github.com/RitikPatill/autodev),
+a multi-agent orchestrator I designed. Each commit in this repo was
+authored by me; the implementation work was performed by Sonnet under
+the orchestrator's control. Read the orchestrator's README to see how.
